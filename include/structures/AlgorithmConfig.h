@@ -3,6 +3,10 @@
 
 #include <string>
 
+/**
+ * @struct AlgorithmConfig
+ * @brief Configuracao do algoritmo de alocacao.
+ */
 struct AlgorithmConfig {
     enum AlgorithmType { BASIC, SPILLING, SPLITTING, FREE };
     
@@ -10,9 +14,21 @@ struct AlgorithmConfig {
     int maxRegisters;
     int parameter;
     
+    /**
+     * @brief Construtor da configuracao.
+     * @param t Tipo do algoritmo.
+     * @param regs Numero de registos disponiveis.
+     * @param param Parametro extra (spills/splits).
+     */
     AlgorithmConfig(AlgorithmType t = BASIC, int regs = 3, int param = 0)
         : type(t), maxRegisters(regs), parameter(param) {}
     
+    /**
+     * @brief Converte enum para string.
+     * @param t Tipo do algoritmo.
+     * @return String correspondente.
+     * @complexity O(1).
+     */
     static std::string typeToString(AlgorithmType t) {
         switch (t) {
             case BASIC: return "basic";
@@ -23,6 +39,12 @@ struct AlgorithmConfig {
         }
     }
     
+    /**
+     * @brief Converte string para enum.
+     * @param str String do tipo.
+     * @return Enum correspondente (BASIC por defeito).
+     * @complexity O(1).
+     */
     static AlgorithmType stringToType(const std::string& str) {
         if (str == "basic") return BASIC;
         if (str == "spilling") return SPILLING;
@@ -31,6 +53,11 @@ struct AlgorithmConfig {
         return BASIC;
     }
     
+    /**
+     * @brief Serializa configuracao para debug/output.
+     * @return String formatada.
+     * @complexity O(1).
+     */
     std::string toString() const {
         std::string result = "Algorithm: " + typeToString(type);
         if (type == SPILLING)
@@ -41,6 +68,11 @@ struct AlgorithmConfig {
         return result;
     }
     
+    /**
+     * @brief Valida a configuracao.
+     * @return True se valida.
+     * @complexity O(1).
+     */
     bool isValid() const {
         if (maxRegisters <= 0) return false;
         if (type == SPILLING || type == SPLITTING)

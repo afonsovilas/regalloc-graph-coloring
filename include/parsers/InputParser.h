@@ -15,11 +15,9 @@
  * @class InputParser
  * @brief Parser para ficheiros de input do projeto de register allocation.
  * 
- * Responsável por:
- * - Parse ranges.txt: variáveis com live ranges
- * - Parse registers.txt: número de registos + algoritmo
- * 
- * Complexidade de parsing: O(n) onde n = total de linhas ficheiros
+ * Responsavel por:
+ * - Parse ranges.txt: variaveis com live ranges
+ * - Parse registers.txt: numero de registos + algoritmo
  */
 class InputParser {
 private:
@@ -53,9 +51,8 @@ public:
      * - Múltiplas linhas da mesma variável = múltiplos live ranges
      * 
      * @param filename Caminho ficheiro ranges.txt
-     * @return true se parse bem-sucedido, false caso contrário
-     * 
-     * @throws std::runtime_error se ficheiro não encontrado
+    * @return true se parse bem-sucedido, false caso contrario
+    * @complexity O(L + T) onde L = linhas do ficheiro e T = tokens totais.
      */
     bool parseRanges(const std::string& filename) {
         std::ifstream file(filename);
@@ -151,7 +148,8 @@ public:
      * - free: algoritmo livre
      * 
      * @param filename Caminho ficheiro registers.txt
-     * @return true se parse bem-sucedido, false caso contrário
+    * @return true se parse bem-sucedido, false caso contrario
+    * @complexity O(L) onde L = linhas do ficheiro.
      */
     bool parseRegisters(const std::string& filename) {
         std::ifstream file(filename);
@@ -237,7 +235,7 @@ public:
      * 2. Merge ranges que se sobrepõem (greedy approach)
      * 3. Retornar lista de webs únicos
      * 
-     * Complexidade: O(v * r^2) onde v=variáveis, r=ranges por variável
+    * @complexity O(v * r^2) onde v = variaveis e r = ranges por variavel.
      * 
      * @return Vector de webs construídos
      */
@@ -307,24 +305,27 @@ public:
         return webs;
     }
 
-    // Getters
+    /// @brief Acesso aos live ranges por variavel.
     const std::map<std::string, std::vector<LiveRange>>& getVariableLiveRanges() const {
         return variableLiveRanges;
     }
-
+    
+    /// @brief Acesso a configuracao do algoritmo.
     const AlgorithmConfig& getAlgorithmConfig() const {
         return algorithmConfig;
     }
-
+    
+    /// @brief Numero de registos disponiveis.
     int getNumRegisters() const {
         return numRegisters;
     }
 
 private:
     /**
-     * @brief Remove leading/trailing whitespace
-     * @param str String a processar
-     * @return String trimmed
+     * @brief Remove espacos no inicio e fim.
+     * @param str String a processar.
+     * @return String sem espacos.
+     * @complexity O(n) onde n = tamanho da string.
      */
     static std::string trim(const std::string& str) {
         size_t first = str.find_first_not_of(" \t\r\n");

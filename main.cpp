@@ -1,14 +1,29 @@
+/**
+ * @file main.cpp
+ * @brief Interface CLI e batch mode do projeto.
+ */
+
 #include <iostream>
 #include <fstream>
 #include "include/parsers/InputParser.h"
 #include "include/structures/RegisterAssignment.h"
 
+/**
+ * @brief Mostra instrucoes de uso da aplicacao.
+ * @param exeName Nome do executavel.
+ * @complexity O(1).
+ */
 static void printUsage(const std::string& exeName) {
     std::cout << "Usage: " << exeName << " ranges.txt registers.txt" << std::endl;
     std::cout << "   or: " << exeName << " -b ranges.txt registers.txt output.txt" << std::endl;
     std::cout << "   or: " << exeName << " (interactive menu)" << std::endl;
 }
 
+/**
+ * @brief Imprime dados parseados para debug.
+ * @param parser Parser com dados carregados.
+ * @complexity O(v + r) onde v = variaveis, r = total de ranges.
+ */
 static void printParsedData(const InputParser& parser) {
     std::cout << "\n=== PARSED DATA ===" << std::endl;
     std::cout << "Algorithm: " << parser.getAlgorithmConfig().toString() << std::endl;
@@ -30,6 +45,11 @@ static void printParsedData(const InputParser& parser) {
     }
 }
 
+/**
+ * @brief Imprime lista de webs.
+ * @param webs Lista de webs.
+ * @complexity O(w + l) onde w = webs, l = linhas totais.
+ */
 static void printWebs(const std::vector<Web>& webs) {
     std::cout << "\nWebs:" << std::endl;
     std::cout << "Total: " << webs.size() << std::endl;
@@ -39,6 +59,15 @@ static void printWebs(const std::vector<Web>& webs) {
     }
 }
 
+/**
+ * @brief Escreve ficheiro de output com webs e atribuicoes.
+ * @param outputFile Caminho do ficheiro de saida.
+ * @param webs Lista de webs.
+ * @param registerCount Numero de registos atribuiveis.
+ * @param assignments Atribuicoes de registos.
+ * @return True se escrito com sucesso.
+ * @complexity O(w + a) onde w = webs e a = atribuicoes.
+ */
 static bool writeOutputFile(
     const std::string& outputFile,
     const std::vector<Web>& webs,
@@ -64,6 +93,14 @@ static bool writeOutputFile(
     return true;
 }
 
+/**
+ * @brief Executa o batch mode.
+ * @param rangesFile Ficheiro ranges.txt.
+ * @param registersFile Ficheiro registers.txt.
+ * @param outputFile Ficheiro de output.
+ * @return True se tudo correr bem.
+ * @complexity Dominado pelo parsing e build de webs.
+ */
 static bool runBatch(
     const std::string& rangesFile,
     const std::string& registersFile,
@@ -101,6 +138,10 @@ static bool runBatch(
     return true;
 }
 
+/**
+ * @brief Menu interativo para testar parsing e output.
+ * @complexity Dependente das operacoes escolhidas pelo utilizador.
+ */
 static void interactiveMenu() {
     InputParser parser;
     bool hasRanges = false;
@@ -188,7 +229,11 @@ static void interactiveMenu() {
 }
 
 /**
- * @brief Programa main para interface e batch mode
+ * @brief Programa main para interface e batch mode.
+ * @param argc Numero de argumentos.
+ * @param argv Argumentos de linha de comando.
+ * @return Codigo de saida.
+ * @complexity O(1) fora chamadas auxiliares.
  */
 int main(int argc, char* argv[]) {
     if (argc == 1) {
