@@ -1,0 +1,9 @@
+# Example: Register configuration
+# Formato:
+# registers: K (número máximo de registos)
+# algorithm: TYPE [, PARAM]
+#   Types: basic, spilling, splitting, free
+#   PARAM: max webs to spill/split (opcional)
+
+registers: 2
+algorithm: basic
