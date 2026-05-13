@@ -1,43 +1,15 @@
 #include <iostream>
+#include <fstream>
 #include "include/parsers/InputParser.h"
+#include "include/structures/RegisterAssignment.h"
 
-/**
- * @brief Programa main para testar InputParser
- * 
- * Uso:
- * ./main ranges.txt registers.txt
- * 
- * Ou:
- * ./main -b ranges.txt registers.txt output.txt (batch mode - TODO)
- */
-int main(int argc, char* argv[]) {
-    
-    // Verificar argumentos
-    if (argc < 3) {
-        std::cout << "Usage: ./main ranges.txt registers.txt" << std::endl;
-        std::cout << "   or: ./main -b ranges.txt registers.txt output.txt" << std::endl;
-        return 1;
-    }
+static void printUsage(const std::string& exeName) {
+    std::cout << "Usage: " << exeName << " ranges.txt registers.txt" << std::endl;
+    std::cout << "   or: " << exeName << " -b ranges.txt registers.txt output.txt" << std::endl;
+    std::cout << "   or: " << exeName << " (interactive menu)" << std::endl;
+}
 
-    InputParser parser;
-
-    // Parse ficheiro de ranges
-    std::cout << "[1] Parsing ranges from: " << argv[1] << std::endl;
-    if (!parser.parseRanges(argv[1])) {
-        std::cerr << "FATAL: Failed to parse ranges" << std::endl;
-        return 1;
-    }
-    std::cout << "✓ Ranges parsed successfully" << std::endl;
-
-    // Parse ficheiro de registos
-    std::cout << "\n[2] Parsing registers from: " << argv[2] << std::endl;
-    if (!parser.parseRegisters(argv[2])) {
-        std::cerr << "FATAL: Failed to parse registers" << std::endl;
-        return 1;
-    }
-    std::cout << "✓ Registers parsed successfully" << std::endl;
-
-    // Mostrar resultado
+static void printParsedData(const InputParser& parser) {
     std::cout << "\n=== PARSED DATA ===" << std::endl;
     std::cout << "Algorithm: " << parser.getAlgorithmConfig().toString() << std::endl;
 
@@ -45,7 +17,7 @@ int main(int argc, char* argv[]) {
     for (const auto& [varName, ranges] : parser.getVariableLiveRanges()) {
         std::cout << "  " << varName << " (" << ranges.size() << " range(s)):" << std::endl;
         for (size_t i = 0; i < ranges.size(); i++) {
-            std::cout << "    Range " << i << ": [" << ranges[i].startLine 
+            std::cout << "    Range " << i << ": [" << ranges[i].startLine
                       << " - " << ranges[i].endLine << "]";
             if (ranges[i].isDefinition) std::cout << " (def)";
             if (ranges[i].isLastUse) std::cout << " (last_use)";
@@ -56,15 +28,209 @@ int main(int argc, char* argv[]) {
             std::cout << std::endl;
         }
     }
+}
 
-    // Build webs
-    std::cout << "\n[3] Building webs..." << std::endl;
-    auto webs = parser.buildWebs();
-    std::cout << "✓ " << webs.size() << " web(s) created:" << std::endl;
+static void printWebs(const std::vector<Web>& webs) {
+    std::cout << "\nWebs:" << std::endl;
+    std::cout << "Total: " << webs.size() << std::endl;
     for (const auto& web : webs) {
-        std::cout << "  " << web.toString() << " (var: " << web.varName 
+        std::cout << "  " << web.toString() << " (var: " << web.varName
                   << ", size: " << web.getSize() << ")" << std::endl;
     }
+}
+
+static bool writeOutputFile(
+    const std::string& outputFile,
+    const std::vector<Web>& webs,
+    int registerCount,
+    const std::vector<RegisterAssignment>& assignments
+) {
+    std::ofstream out(outputFile);
+    if (!out.is_open()) {
+        std::cerr << "ERROR: Cannot write output file: " << outputFile << std::endl;
+        return false;
+    }
+
+    out << "webs: " << webs.size() << "\n";
+    for (const auto& web : webs) {
+        out << web.toString() << "\n";
+    }
+
+    out << "\nregisters: " << registerCount << "\n";
+    for (const auto& assignment : assignments) {
+        out << assignment.toString() << "\n";
+    }
+
+    return true;
+}
+
+static bool runBatch(
+    const std::string& rangesFile,
+    const std::string& registersFile,
+    const std::string& outputFile
+) {
+    InputParser parser;
+
+    std::cout << "[1] Parsing ranges from: " << rangesFile << std::endl;
+    if (!parser.parseRanges(rangesFile)) {
+        std::cerr << "FATAL: Failed to parse ranges" << std::endl;
+        return false;
+    }
+
+    std::cout << "[2] Parsing registers from: " << registersFile << std::endl;
+    if (!parser.parseRegisters(registersFile)) {
+        std::cerr << "FATAL: Failed to parse registers" << std::endl;
+        return false;
+    }
+
+    auto webs = parser.buildWebs();
+
+    // TODO: Substituir por resultados reais quando o graph coloring estiver pronto.
+    std::vector<RegisterAssignment> assignments;
+    assignments.reserve(webs.size());
+    for (const auto& web : webs) {
+        assignments.emplace_back(web.webId, web.varName);
+    }
+
+    int registerCount = 0;
+    if (!writeOutputFile(outputFile, webs, registerCount, assignments)) {
+        return false;
+    }
+
+    std::cout << "✓ Batch output written to: " << outputFile << std::endl;
+    return true;
+}
+
+static void interactiveMenu() {
+    InputParser parser;
+    bool hasRanges = false;
+    bool hasRegisters = false;
+    bool hasWebs = false;
+    std::vector<Web> webs;
+
+    while (true) {
+        std::cout << "\n=== MENU ===" << std::endl;
+        std::cout << "1) Parse ranges.txt" << std::endl;
+        std::cout << "2) Parse registers.txt" << std::endl;
+        std::cout << "3) Build webs" << std::endl;
+        std::cout << "4) Show parsed data" << std::endl;
+        std::cout << "5) Save batch output" << std::endl;
+        std::cout << "0) Exit" << std::endl;
+        std::cout << "> ";
+
+        int choice = -1;
+        if (!(std::cin >> choice)) {
+            std::cin.clear();
+            std::cin.ignore(1024, '\n');
+            std::cout << "Invalid input." << std::endl;
+            continue;
+        }
+
+        if (choice == 0) {
+            break;
+        }
+
+        if (choice == 1) {
+            std::string rangesFile;
+            std::cout << "Ranges file path: ";
+            std::cin >> rangesFile;
+            hasRanges = parser.parseRanges(rangesFile);
+            if (hasRanges) std::cout << "✓ Ranges parsed." << std::endl;
+        } else if (choice == 2) {
+            std::string registersFile;
+            std::cout << "Registers file path: ";
+            std::cin >> registersFile;
+            hasRegisters = parser.parseRegisters(registersFile);
+            if (hasRegisters) std::cout << "✓ Registers parsed." << std::endl;
+        } else if (choice == 3) {
+            if (!hasRanges) {
+                std::cout << "Parse ranges first." << std::endl;
+                continue;
+            }
+            webs = parser.buildWebs();
+            hasWebs = true;
+            printWebs(webs);
+        } else if (choice == 4) {
+            if (!hasRanges || !hasRegisters) {
+                std::cout << "Parse ranges and registers first." << std::endl;
+                continue;
+            }
+            printParsedData(parser);
+        } else if (choice == 5) {
+            if (!hasRanges || !hasRegisters) {
+                std::cout << "Parse ranges and registers first." << std::endl;
+                continue;
+            }
+
+            if (!hasWebs) {
+                webs = parser.buildWebs();
+                hasWebs = true;
+            }
+
+            std::string outputFile;
+            std::cout << "Output file path: ";
+            std::cin >> outputFile;
+
+            std::vector<RegisterAssignment> assignments;
+            assignments.reserve(webs.size());
+            for (const auto& web : webs) {
+                assignments.emplace_back(web.webId, web.varName);
+            }
+
+            int registerCount = 0;
+            if (writeOutputFile(outputFile, webs, registerCount, assignments)) {
+                std::cout << "✓ Output written to: " << outputFile << std::endl;
+            }
+        } else {
+            std::cout << "Unknown option." << std::endl;
+        }
+    }
+}
+
+/**
+ * @brief Programa main para interface e batch mode
+ */
+int main(int argc, char* argv[]) {
+    if (argc == 1) {
+        interactiveMenu();
+        return 0;
+    }
+
+    if (argc >= 2 && std::string(argv[1]) == "-b") {
+        if (argc < 5) {
+            printUsage(argv[0]);
+            return 1;
+        }
+        if (!runBatch(argv[2], argv[3], argv[4])) {
+            return 1;
+        }
+        return 0;
+    }
+
+    if (argc < 3) {
+        printUsage(argv[0]);
+        return 1;
+    }
+
+    InputParser parser;
+
+    std::cout << "[1] Parsing ranges from: " << argv[1] << std::endl;
+    if (!parser.parseRanges(argv[1])) {
+        std::cerr << "FATAL: Failed to parse ranges" << std::endl;
+        return 1;
+    }
+
+    std::cout << "\n[2] Parsing registers from: " << argv[2] << std::endl;
+    if (!parser.parseRegisters(argv[2])) {
+        std::cerr << "FATAL: Failed to parse registers" << std::endl;
+        return 1;
+    }
+
+    printParsedData(parser);
+
+    std::cout << "\n[3] Building webs..." << std::endl;
+    auto webs = parser.buildWebs();
+    printWebs(webs);
 
     return 0;
 }
