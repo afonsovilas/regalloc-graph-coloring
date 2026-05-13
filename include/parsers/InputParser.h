@@ -10,6 +10,7 @@
 #include "../structures/LiveRange.h"
 #include "../structures/Web.h"
 #include "../structures/AlgorithmConfig.h"
+#include "../structures/InterferenceGraph.h"
 
 /**
  * @class InputParser
@@ -303,6 +304,30 @@ public:
         }
 
         return webs;
+    }
+
+    /**
+     * @brief Constroi o grafo de interferencia a partir de webs.
+     * @param webs Lista de webs.
+     * @return Grafo de interferencia construido.
+     * @complexity O(w^2 * c) onde w = numero de webs e c = custo de overlaps.
+     */
+    InterferenceGraph buildInterferenceGraph(const std::vector<Web>& webs) const {
+        InterferenceGraph graph;
+
+        for (const auto& web : webs) {
+            graph.addNode(web.webId);
+        }
+
+        for (size_t i = 0; i < webs.size(); i++) {
+            for (size_t j = i + 1; j < webs.size(); j++) {
+                if (webs[i].overlaps(webs[j])) {
+                    graph.addInterference(webs[i].webId, webs[j].webId);
+                }
+            }
+        }
+
+        return graph;
     }
 
     /// @brief Acesso aos live ranges por variavel.

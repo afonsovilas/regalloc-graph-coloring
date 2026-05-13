@@ -58,6 +58,16 @@ static void printWebs(const std::vector<Web>& webs) {
                   << ", size: " << web.getSize() << ")" << std::endl;
     }
 }
+/**
+ * @brief Imprime um resumo do grafo de interferencia.
+ * @param graph Grafo de interferencia.
+ * @complexity O(1) para contagens pre-calculadas.
+ */
+static void printGraphSummary(const InterferenceGraph& graph) {
+    std::cout << "\nInterference Graph:" << std::endl;
+    std::cout << "Nodes: " << graph.getNumNodes() << std::endl;
+    std::cout << "Edges: " << graph.getNumEdges() << std::endl;
+}
 
 /**
  * @brief Escreve ficheiro de output com webs e atribuicoes.
@@ -121,6 +131,8 @@ static bool runBatch(
     }
 
     auto webs = parser.buildWebs();
+        auto graph = parser.buildInterferenceGraph(webs);
+        printGraphSummary(graph);
 
     // TODO: Substituir por resultados reais quando o graph coloring estiver pronto.
     std::vector<RegisterAssignment> assignments;
@@ -191,6 +203,8 @@ static void interactiveMenu() {
             webs = parser.buildWebs();
             hasWebs = true;
             printWebs(webs);
+            auto graph = parser.buildInterferenceGraph(webs);
+            printGraphSummary(graph);
         } else if (choice == 4) {
             if (!hasRanges || !hasRegisters) {
                 std::cout << "Parse ranges and registers first." << std::endl;
@@ -276,6 +290,9 @@ int main(int argc, char* argv[]) {
     std::cout << "\n[3] Building webs..." << std::endl;
     auto webs = parser.buildWebs();
     printWebs(webs);
+
+    auto graph = parser.buildInterferenceGraph(webs);
+    printGraphSummary(graph);
 
     return 0;
 }
