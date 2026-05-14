@@ -7,6 +7,7 @@
 #include <fstream>
 #include "include/parsers/InputParser.h"
 #include "include/structures/RegisterAssignment.h"
+#include "include/algorithms/GraphColoring.h"
 
 /**
  * @brief Mostra instrucoes de uso da aplicacao.
@@ -67,6 +68,37 @@ static void printGraphSummary(const InterferenceGraph& graph) {
     std::cout << "\nInterference Graph:" << std::endl;
     std::cout << "Nodes: " << graph.getNumNodes() << std::endl;
     std::cout << "Edges: " << graph.getNumEdges() << std::endl;
+}
+
+/**
+ * @brief Imprime atribuicoes de registos.
+ * @param assignments Lista de atribuicoes.
+ * @param registerCount Numero de registos usados.
+ * @complexity O(a) onde a = numero de atribuicoes.
+ */
+static void printAssignments(
+    const std::vector<RegisterAssignment>& assignments,
+    int registerCount
+) {
+    std::cout << "\nRegisters: " << registerCount << std::endl;
+    for (const auto& assignment : assignments) {
+        std::cout << "  " << assignment.toString() << std::endl;
+    }
+}
+
+/**
+ * @brief Gera atribuicoes para memoria (fallback).
+ * @param webs Lista de webs.
+ * @return Lista de atribuicoes em memoria.
+ * @complexity O(w) onde w = webs.
+ */
+static std::vector<RegisterAssignment> buildMemoryAssignments(const std::vector<Web>& webs) {
+    std::vector<RegisterAssignment> assignments;
+    assignments.reserve(webs.size());
+    for (const auto& web : webs) {
+        assignments.emplace_back(web.webId, web.varName);
+    }
+    return assignments;
 }
 
 /**
@@ -131,17 +163,29 @@ static bool runBatch(
     }
 
     auto webs = parser.buildWebs();
-        auto graph = parser.buildInterferenceGraph(webs);
-        printGraphSummary(graph);
+    auto graph = parser.buildInterferenceGraph(webs);
+    printGraphSummary(graph);
 
-    // TODO: Substituir por resultados reais quando o graph coloring estiver pronto.
+    auto config = parser.getAlgorithmConfig();
+    int registerCount = 0;
     std::vector<RegisterAssignment> assignments;
-    assignments.reserve(webs.size());
-    for (const auto& web : webs) {
-        assignments.emplace_back(web.webId, web.varName);
+
+    if (config.type == AlgorithmConfig::BASIC) {
+        auto result = colorGraphBasic(graph, webs, config.maxRegisters);
+        if (!result.success) {
+            std::cout << "WARNING: Graph not colorable with K registers." << std::endl;
+            assignments = buildMemoryAssignments(webs);
+            registerCount = 0;
+        } else {
+            assignments = result.assignments;
+            registerCount = result.registersUsed;
+        }
+    } else {
+        std::cout << "WARNING: Algorithm not implemented yet. Using memory." << std::endl;
+        assignments = buildMemoryAssignments(webs);
+        registerCount = 0;
     }
 
-    int registerCount = 0;
     if (!writeOutputFile(outputFile, webs, registerCount, assignments)) {
         return false;
     }
@@ -226,13 +270,27 @@ static void interactiveMenu() {
             std::cout << "Output file path: ";
             std::cin >> outputFile;
 
+            auto config = parser.getAlgorithmConfig();
+            int registerCount = 0;
             std::vector<RegisterAssignment> assignments;
-            assignments.reserve(webs.size());
-            for (const auto& web : webs) {
-                assignments.emplace_back(web.webId, web.varName);
+            auto graph = parser.buildInterferenceGraph(webs);
+
+            if (config.type == AlgorithmConfig::BASIC) {
+                auto result = colorGraphBasic(graph, webs, config.maxRegisters);
+                if (!result.success) {
+                    std::cout << "WARNING: Graph not colorable with K registers." << std::endl;
+                    assignments = buildMemoryAssignments(webs);
+                    registerCount = 0;
+                } else {
+                    assignments = result.assignments;
+                    registerCount = result.registersUsed;
+                }
+            } else {
+                std::cout << "WARNING: Algorithm not implemented yet. Using memory." << std::endl;
+                assignments = buildMemoryAssignments(webs);
+                registerCount = 0;
             }
 
-            int registerCount = 0;
             if (writeOutputFile(outputFile, webs, registerCount, assignments)) {
                 std::cout << "✓ Output written to: " << outputFile << std::endl;
             }
@@ -293,6 +351,18 @@ int main(int argc, char* argv[]) {
 
     auto graph = parser.buildInterferenceGraph(webs);
     printGraphSummary(graph);
+
+    auto config = parser.getAlgorithmConfig();
+    if (config.type == AlgorithmConfig::BASIC) {
+        auto result = colorGraphBasic(graph, webs, config.maxRegisters);
+        if (!result.success) {
+            std::cout << "WARNING: Graph not colorable with K registers." << std::endl;
+        } else {
+            printAssignments(result.assignments, result.registersUsed);
+        }
+    } else {
+        std::cout << "WARNING: Algorithm not implemented yet. Skipping coloring." << std::endl;
+    }
 
     return 0;
 }

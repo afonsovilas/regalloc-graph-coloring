@@ -1,0 +1,19 @@
+# Doxygen configuration for DA_secondProject
+PROJECT_NAME           = "DA_secondProject"
+OUTPUT_DIRECTORY       = Documentation
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+EXTRACT_ALL            = YES
+QUIET                  = YES
+INPUT                  = main.cpp \
+                         include/parsers \
+                         include/structures \
+                         include/algorithms \
+                         include/DataStructures.h
+FILE_PATTERNS          = *.h *.cpp
+RECURSIVE              = YES
+GENERATE_TREEVIEW      = YES
+WARN_IF_UNDOCUMENTED   = YES
+WARN_NO_PARAMDOC       = YES
+OPTIMIZE_OUTPUT_FOR_C  = NO
+MARKDOWN_SUPPORT       = YES
