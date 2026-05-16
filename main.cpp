@@ -5,8 +5,61 @@
 
 #include <iostream>
 #include <fstream>
+#include <set>
 #include "include/parsers/InputParser.h"
 #include "include/structures/RegisterAssignment.h"
+#include "include/algorithms/GreedyColoring.h"
+
+/**
+ * @struct AllocationResult
+ * @brief Resultado da alocacao para output.
+ */
+struct AllocationResult {
+    int registerCount;
+    std::vector<RegisterAssignment> assignments;
+    bool successful;
+};
+
+/**
+ * @brief Executa o algoritmo de Figura 9 e aplica a regra de aceitacao do modo.
+ * @param webs Lista de webs (ordem preservada no output).
+ * @param graph Grafo de interferencia.
+ * @param cfg Configuracao do algoritmo (basic ou spilling, K).
+ * @return Resultado pronto para escrita.
+ * @complexity O(V * (V + E)) dominado pela coloracao.
+ */
+static AllocationResult allocate(const std::vector<Web>& webs,const InterferenceGraph& graph,const AlgorithmConfig& cfg) {
+    ColoringResult coloring = GreedyColoring::run(graph, cfg.maxRegisters);
+
+    bool accepted = false;
+    if (cfg.type == AlgorithmConfig::BASIC)
+        accepted = coloring.spilled.empty();
+    else if (cfg.type == AlgorithmConfig::SPILLING)
+        accepted = static_cast<int>(coloring.spilled.size()) <= cfg.parameter;
+
+    AllocationResult out;
+    out.successful = accepted;
+
+    if (!accepted) {
+        out.registerCount = 0;
+        for (const auto& web : webs)
+            out.assignments.emplace_back(web.webId, web.varName);
+        return out;
+    }
+
+    std::set<int> usedColors;
+    for (const auto& web : webs) {
+        auto it = coloring.colors.find(web.webId);
+        if (it != coloring.colors.end()) {
+            out.assignments.emplace_back(web.webId, web.varName, it->second);
+            usedColors.insert(it->second);
+        } else {
+            out.assignments.emplace_back(web.webId, web.varName);
+        }
+    }
+    out.registerCount = static_cast<int>(usedColors.size());
+    return out;
+}
 
 /**
  * @brief Mostra instrucoes de uso da aplicacao.
@@ -131,22 +184,20 @@ static bool runBatch(
     }
 
     auto webs = parser.buildWebs();
-        auto graph = parser.buildInterferenceGraph(webs);
-        printGraphSummary(graph);
+    auto graph = parser.buildInterferenceGraph(webs);
+    printGraphSummary(graph);
 
-    // TODO: Substituir por resultados reais quando o graph coloring estiver pronto.
-    std::vector<RegisterAssignment> assignments;
-    assignments.reserve(webs.size());
-    for (const auto& web : webs) {
-        assignments.emplace_back(web.webId, web.varName);
+    auto allocation = allocate(webs, graph, parser.getAlgorithmConfig());
+    if (!allocation.successful) {
+        std::cerr << "WARNING: Allocation with "
+                  << parser.getAlgorithmConfig().maxRegisters
+                  << " registers was not possible." << std::endl;
     }
 
-    int registerCount = 0;
-    if (!writeOutputFile(outputFile, webs, registerCount, assignments)) {
+    if (!writeOutputFile(outputFile, webs, allocation.registerCount, allocation.assignments))
         return false;
-    }
 
-    std::cout << "✓ Batch output written to: " << outputFile << std::endl;
+    std::cout << "Batch output written to: " << outputFile << std::endl;
     return true;
 }
 

@@ -44,8 +44,7 @@ public:
      * @complexity O(log n).
      */
     void addNode(int webId) {
-        if (nodes.find(webId) == nodes.end())
-            nodes[webId] = InterferenceNode(webId);
+        nodes.emplace(webId, InterferenceNode(webId));
     }
     
     /**
