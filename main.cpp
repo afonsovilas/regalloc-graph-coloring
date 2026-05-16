@@ -188,11 +188,8 @@ static bool runBatch(
     printGraphSummary(graph);
 
     auto allocation = allocate(webs, graph, parser.getAlgorithmConfig());
-    if (!allocation.successful) {
-        std::cerr << "WARNING: Allocation with "
-                  << parser.getAlgorithmConfig().maxRegisters
-                  << " registers was not possible." << std::endl;
-    }
+    if (!allocation.successful)
+        std::cerr << "WARNING: allocation not possible." << std::endl;
 
     if (!writeOutputFile(outputFile, webs, allocation.registerCount, allocation.assignments))
         return false;
@@ -277,16 +274,12 @@ static void interactiveMenu() {
             std::cout << "Output file path: ";
             std::cin >> outputFile;
 
-            std::vector<RegisterAssignment> assignments;
-            assignments.reserve(webs.size());
-            for (const auto& web : webs) {
-                assignments.emplace_back(web.webId, web.varName);
-            }
-
-            int registerCount = 0;
-            if (writeOutputFile(outputFile, webs, registerCount, assignments)) {
-                std::cout << "✓ Output written to: " << outputFile << std::endl;
-            }
+            auto graph = parser.buildInterferenceGraph(webs);
+            auto allocation = allocate(webs, graph, parser.getAlgorithmConfig());
+            if (!allocation.successful)
+                std::cerr << "err: allocation not possible." << std::endl;
+            if (writeOutputFile(outputFile, webs, allocation.registerCount, allocation.assignments))
+                std::cout << "Output written to: " << outputFile << std::endl;
         } else {
             std::cout << "Unknown option." << std::endl;
         }

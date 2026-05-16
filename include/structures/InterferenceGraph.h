@@ -55,9 +55,11 @@ public:
      */
     void addInterference(int web1, int web2) {
         if (web1 == web2) return;
-        if (nodes.find(web1) != nodes.end() && nodes.find(web2) != nodes.end()) {
-            nodes[web1].interferesWith.insert(web2);
-            nodes[web2].interferesWith.insert(web1);
+        auto it1 = nodes.find(web1);
+        auto it2 = nodes.find(web2);
+        if (it1 != nodes.end() && it2 != nodes.end()) {
+            it1->second.interferesWith.insert(web2);
+            it2->second.interferesWith.insert(web1);
         }
     }
     
