@@ -1,0 +1,6 @@
+# Example: Register configuration (spilling)
+# registers: K (numero maximo de registos)
+# algorithm: spilling, K
+
+registers: 2
+algorithm: spilling, 1

@@ -1,0 +1,6 @@
+# Example: Register configuration (splitting)
+# registers: K (numero maximo de registos)
+# algorithm: splitting, K
+
+registers: 2
+algorithm: splitting, 1

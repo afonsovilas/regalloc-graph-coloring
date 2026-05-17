@@ -1,28 +1,40 @@
 ﻿#ifndef DA_PROJECT_LIVE_RANGE_H
 #define DA_PROJECT_LIVE_RANGE_H
 
-#include <vector>
 #include <set>
+#include <vector>
 #include <iostream>
 
 /**
- * @struct LiveRange
- * @brief Intervalo contiguo onde uma variavel esta viva.
+ * @brief Representa o intervalo de vida (Live Range) de uma variável no programa.
  */
 struct LiveRange {
     std::set<int> lines;
+    std::set<int> defLines;
+    std::set<int> lastUseLines;
     int startLine, endLine;
     bool isDefinition, isLastUse;
     
     /**
      * @brief Construtor a partir do conjunto de linhas.
-     * @param lines_ Linhas onde a variavel esta viva.
-     * @param isDef True se o intervalo comeca com definicao (+).
-     * @param isLast True se termina com ultima utilizacao (-).
-     * @complexity O(n log n) no pior caso ao construir o set.
+     * @param lines_ Conjunto de linhas que compõem a live range.
+     * @param defLines_ Conjunto de linhas onde a variável é definida.
+     * @param lastUseLines_ Conjunto de linhas da última utilização da variável.
+     * @param isDef Indica se a live range começa numa definição.
+     * @param isLast Indica se a live range termina na última utilização.
+     * \complexity O(n log n) no pior caso ao construir os conjuntos em memória.
      */
-    LiveRange(const std::set<int>& lines_, bool isDef = false, bool isLast = false)
-        : lines(lines_), isDefinition(isDef), isLastUse(isLast) {
+    LiveRange(
+        const std::set<int>& lines_,
+        const std::set<int>& defLines_ = {},
+        const std::set<int>& lastUseLines_ = {},
+        bool isDef = false,
+        bool isLast = false
+    ) : lines(lines_),
+        defLines(defLines_),
+        lastUseLines(lastUseLines_),
+        isDefinition(isDef),
+        isLastUse(isLast) {
         if (!lines.empty()) {
             startLine = *lines.begin();
             endLine = *lines.rbegin();
@@ -32,10 +44,10 @@ struct LiveRange {
     }
     
     /**
-     * @brief Verifica se dois live ranges se sobrepoem.
+     * @brief Verifica se dois live ranges se sobrepõem.
      * @param other Outro live range.
-     * @return True se partilham pelo menos uma linha.
-     * @complexity O(m log n) onde m = linhas deste range e n = linhas do outro.
+     * @return True se partilharem pelo menos uma linha.
+     * \complexity O(m log n) onde m é o número de linhas deste range e n é o do outro.
      */
     bool overlaps(const LiveRange& other) const {
         for (int line : lines)
@@ -44,4 +56,4 @@ struct LiveRange {
     }
 };
 
-#endif
+#endif // DA_PROJECT_LIVE_RANGE_H

@@ -20,4 +20,7 @@ clean:
 test: $(TARGET)
 	./$(TARGET) test_ranges.txt test_registers.txt
 
-.PHONY: all clean test
+docs:
+	doxygen Doxyfile
+
+.PHONY: all clean test docs

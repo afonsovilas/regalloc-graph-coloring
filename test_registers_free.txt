@@ -1,0 +1,6 @@
+# Example: Register configuration (free)
+# registers: K (numero maximo de registos)
+# algorithm: free
+
+registers: 2
+algorithm: free

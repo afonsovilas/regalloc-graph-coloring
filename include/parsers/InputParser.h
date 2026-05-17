@@ -15,10 +15,9 @@
 /**
  * @class InputParser
  * @brief Parser para ficheiros de input do projeto de register allocation.
- * 
- * Responsavel por:
- * - Parse ranges.txt: variaveis com live ranges
- * - Parse registers.txt: numero de registos + algoritmo
+ * * Responsável por:
+ * - Parse ranges.txt: variáveis com live ranges
+ * - Parse registers.txt: número de registos + algoritmo
  */
 class InputParser {
 private:
@@ -32,28 +31,25 @@ private:
     int numRegisters;
 
 public:
-    InputParser() : numRegisters(0), 
-                    algorithmConfig(AlgorithmConfig::BASIC, 0, 0) {}
+    InputParser() : algorithmConfig(AlgorithmConfig::BASIC, 0, 0),
+                    numRegisters(0) {}
 
     /**
-     * @brief Parse ficheiro ranges.txt
-     * 
-     * Formato esperado:
+     * @brief Parse do ficheiro ranges.txt.
+     * * Formato esperado:
      * ```
      * # comentário (ignorado)
      * sum: 7+,8,9,10-
      * i: 1+,2,3,4,5,6-
      * i: 9+,10,11,12-
      * ```
-     * 
-     * Onde:
+     * * Onde:
      * - "+" = definição (assignment LHS)
      * - "-" = último uso (RHS)
      * - Múltiplas linhas da mesma variável = múltiplos live ranges
-     * 
-     * @param filename Caminho ficheiro ranges.txt
-    * @return true se parse bem-sucedido, false caso contrario
-    * @complexity O(L + T) onde L = linhas do ficheiro e T = tokens totais.
+     * * @param filename Caminho do ficheiro ranges.txt.
+     * @return true se o parse for bem-sucedido, false caso contrário.
+     * \complexity O(L + T) onde L = linhas do ficheiro e T = tokens totais.
      */
     bool parseRanges(const std::string& filename) {
         std::ifstream file(filename);
@@ -88,6 +84,8 @@ public:
 
             // Parse os números de linha
             std::set<int> liveLines;
+            std::set<int> defLines;
+            std::set<int> lastUseLines;
             bool isDefinition = false;
             bool isLastUse = false;
 
@@ -99,17 +97,27 @@ public:
                 if (token.empty()) continue;
 
                 // Verificar se tem + ou - no final
+                bool tokenDef = false;
+                bool tokenLast = false;
                 if (token.back() == '+') {
-                    isDefinition = true;
+                    tokenDef = true;
                     token.pop_back();
                 } else if (token.back() == '-') {
-                    isLastUse = true;
+                    tokenLast = true;
                     token.pop_back();
                 }
 
                 try {
                     int lineNum = std::stoi(token);
                     liveLines.insert(lineNum);
+                    if (tokenDef) {
+                        defLines.insert(lineNum);
+                        isDefinition = true;
+                    }
+                    if (tokenLast) {
+                        lastUseLines.insert(lineNum);
+                        isLastUse = true;
+                    }
                 } catch (std::invalid_argument&) {
                     std::cerr << "WARNING: Invalid line number '" << token << "' at line " << lineNumber << std::endl;
                 }
@@ -117,7 +125,7 @@ public:
 
             // Se conseguiu parsear pelo menos uma linha, adicionar
             if (!liveLines.empty()) {
-                LiveRange lr(liveLines, isDefinition, isLastUse);
+                LiveRange lr(liveLines, defLines, lastUseLines, isDefinition, isLastUse);
                 variableLiveRanges[varName].push_back(lr);
             }
         }
@@ -127,30 +135,26 @@ public:
     }
 
     /**
-     * @brief Parse ficheiro registers.txt
-     * 
-     * Formato esperado:
+     * @brief Parse do ficheiro registers.txt.
+     * * Formato esperado:
      * ```
      * # comentário
      * registers: 3
      * algorithm: basic
      * ```
-     * 
-     * Ou com parâmetro:
+     * * Ou com parâmetro:
      * ```
      * registers: 2
      * algorithm: spilling, 2
      * ```
-     * 
-     * Algoritmos suportados:
+     * * Algoritmos suportados:
      * - basic: greedy coloring simples
      * - spilling K: permite spill até K webs
      * - splitting K: permite split até K webs
      * - free: algoritmo livre
-     * 
-     * @param filename Caminho ficheiro registers.txt
-    * @return true se parse bem-sucedido, false caso contrario
-    * @complexity O(L) onde L = linhas do ficheiro.
+     * * @param filename Caminho do ficheiro registers.txt.
+     * @return true se o parse for bem-sucedido, false caso contrário.
+     * \complexity O(L) onde L = linhas do ficheiro.
      */
     bool parseRegisters(const std::string& filename) {
         std::ifstream file(filename);
@@ -162,6 +166,11 @@ public:
 
         std::string line;
         int lineNumber = 0;
+        bool hasRegisters = false;
+        bool hasAlgorithm = false;
+        int parsedRegisters = 0;
+        AlgorithmConfig::AlgorithmType parsedType = AlgorithmConfig::BASIC;
+        int parsedParam = 0;
 
         while (std::getline(file, line)) {
             lineNumber++;
@@ -175,11 +184,12 @@ public:
                     std::string numStr = line.substr(colonPos + 1);
                     numStr = trim(numStr);
                     try {
-                        numRegisters = std::stoi(numStr);
-                        if (numRegisters <= 0) {
+                        parsedRegisters = std::stoi(numStr);
+                        if (parsedRegisters <= 0) {
                             std::cerr << "ERROR: Number of registers must be positive at line " << lineNumber << std::endl;
                             return false;
                         }
+                        hasRegisters = true;
                     } catch (std::invalid_argument&) {
                         std::cerr << "ERROR: Invalid number of registers at line " << lineNumber << std::endl;
                         return false;
@@ -211,13 +221,17 @@ public:
                         }
                     }
 
-                    AlgorithmConfig::AlgorithmType type = AlgorithmConfig::stringToType(algoType);
-                    algorithmConfig = AlgorithmConfig(type, numRegisters, param);
+                    parsedType = AlgorithmConfig::stringToType(algoType);
+                    parsedParam = param;
+                    hasAlgorithm = true;
                 }
             }
         }
 
         file.close();
+
+        if (hasRegisters) numRegisters = parsedRegisters;
+        if (hasAlgorithm) algorithmConfig = AlgorithmConfig(parsedType, numRegisters, parsedParam);
 
         // Validar
         if (!algorithmConfig.isValid()) {
@@ -229,88 +243,66 @@ public:
     }
 
     /**
-     * @brief Construir webs a partir dos live ranges parseados
-     * 
-     * Estratégia:
-     * 1. Para cada variável com múltiplos live ranges
-     * 2. Merge ranges que se sobrepõem (greedy approach)
-     * 3. Retornar lista de webs únicos
-     * 
-    * @complexity O(v * r^2) onde v = variaveis e r = ranges por variavel.
-     * 
-     * @return Vector de webs construídos
+     * @brief Construir webs a partir dos live ranges parseados.
+     * * Estratégia:
+     * 1. Para cada variável com múltiplos live ranges.
+     * 2. Merge de ranges que se sobrepõem (greedy approach).
+     * 3. Retornar lista de webs únicos.
+     * * @return Vetor de webs construídos.
+     * \complexity O(V_vars * R^2) onde V_vars é o número de variáveis e R o número de sub-intervalos por variável.
      */
     std::vector<Web> buildWebs() const {
         std::vector<Web> webs;
         int webId = 0;
 
         for (const auto& [varName, ranges] : variableLiveRanges) {
-            // Começar com primeiro range
-            std::set<int> mergedLines;
-            bool isMergedDef = false;
-            bool isMergedLastUse = false;
+            std::vector<Web> varWebs;
 
             for (const auto& range : ranges) {
-                // Se não sobrepõe com merged, criar novo web
-                bool needsNewWeb = false;
-                for (int line : range.lines) {
-                    if (mergedLines.find(line) == mergedLines.end()) {
-                        // Se já temos algo em mergedLines, talvez seja novo web
-                        if (!mergedLines.empty() && range.lines.size() > 0) {
-                            // Verificar se primeiro/último da linha é vizinho
-                            int minMerged = *mergedLines.begin();
-                            int maxMerged = *mergedLines.rbegin();
-                            int minRange = *range.lines.begin();
-                            int maxRange = *range.lines.rbegin();
-                            
-                            // Se há gap > 0, pode ser novo web ou continuação
-                            if (minRange > maxMerged + 1 && minMerged > maxRange + 1) {
-                                needsNewWeb = true;
-                            }
+                std::vector<size_t> overlaps;
+                for (size_t i = 0; i < varWebs.size(); i++) {
+                    bool intersects = false;
+                    for (int line : range.lines) {
+                        if (varWebs[i].lines.count(line) > 0) {
+                            intersects = true;
+                            break;
                         }
                     }
+                    if (intersects) overlaps.push_back(i);
                 }
 
-                if (needsNewWeb && !mergedLines.empty()) {
-                    // Salvar web anterior
+                if (overlaps.empty()) {
                     Web web(webId++, varName);
-                    for (int line : mergedLines) {
-                        web.lines.insert(line);
-                    }
-                    webs.push_back(web);
-
-                    // Começar novo
-                    mergedLines = range.lines;
-                    isMergedDef = range.isDefinition;
-                    isMergedLastUse = range.isLastUse;
+                    web.addLiveRange(range);
+                    varWebs.push_back(web);
                 } else {
-                    // Merge: adicionar linhas do range ao merged
-                    for (int line : range.lines) {
-                        mergedLines.insert(line);
+                    size_t target = overlaps.front();
+                    varWebs[target].addLiveRange(range);
+
+                    for (size_t k = 1; k < overlaps.size(); k++) {
+                        size_t idx = overlaps[k];
+                        varWebs[target].mergeFrom(varWebs[idx]);
                     }
-                    if (range.isDefinition) isMergedDef = true;
-                    if (range.isLastUse) isMergedLastUse = true;
+
+                    for (size_t k = overlaps.size(); k-- > 1;) {
+                        size_t idx = overlaps[k];
+                        varWebs.erase(varWebs.begin() + idx);
+                    }
                 }
             }
 
-            // Salvar último web
-            if (!mergedLines.empty()) {
-                Web web(webId++, varName);
-                for (int line : mergedLines) {
-                    web.lines.insert(line);
-                }
+            for (auto& web : varWebs)
                 webs.push_back(web);
-            }
         }
 
         return webs;
     }
 
     /**
-     * @brief Constroi o grafo de interferencia a partir de webs.
+     * @brief Constrói o grafo de interferência a partir de webs.
      * @param webs Lista de webs.
-     * @return Grafo de interferencia construido.
-     * @complexity O(w^2 * c) onde w = numero de webs e c = custo de overlaps.
+     * @return Grafo de interferência construído.
+     * \complexity O(W^2 * L) onde W é o número total de webs e L é a média de linhas de código por web.
      */
     InterferenceGraph buildInterferenceGraph(const std::vector<Web>& webs) const {
         InterferenceGraph graph;
@@ -321,7 +313,7 @@ public:
 
         for (size_t i = 0; i < webs.size(); i++) {
             for (size_t j = i + 1; j < webs.size(); j++) {
-                if (webs[i].overlaps(webs[j])) {
+                if (webs[i].interferesWith(webs[j])) {
                     graph.addInterference(webs[i].webId, webs[j].webId);
                 }
             }
@@ -330,27 +322,27 @@ public:
         return graph;
     }
 
-    /// @brief Acesso aos live ranges por variavel.
+    /// @brief Acesso aos live ranges por variável.
     const std::map<std::string, std::vector<LiveRange>>& getVariableLiveRanges() const {
         return variableLiveRanges;
     }
     
-    /// @brief Acesso a configuracao do algoritmo.
+    /// @brief Acesso à configuração do algoritmo.
     const AlgorithmConfig& getAlgorithmConfig() const {
         return algorithmConfig;
     }
     
-    /// @brief Numero de registos disponiveis.
+    /// @brief Número de registos disponíveis.
     int getNumRegisters() const {
         return numRegisters;
     }
 
 private:
     /**
-     * @brief Remove espacos no inicio e fim.
+     * @brief Remove espaços no início e no fim de uma string.
      * @param str String a processar.
-     * @return String sem espacos.
-     * @complexity O(n) onde n = tamanho da string.
+     * @return String limpa.
+     * \complexity O(n) onde n é o tamanho da string.
      */
     static std::string trim(const std::string& str) {
         size_t first = str.find_first_not_of(" \t\r\n");
@@ -360,4 +352,4 @@ private:
     }
 };
 
-#endif
+#endif // DA_PROJECT_INPUT_PARSER_H

@@ -5,9 +5,293 @@
 
 #include <iostream>
 #include <fstream>
+#include <set>
+#include <map>
+#include <algorithm>
 #include "include/parsers/InputParser.h"
 #include "include/structures/RegisterAssignment.h"
-#include "include/algorithms/GraphColoring.h"
+#include "include/algorithms/GreedyColoring.h"
+
+/**
+ * @struct AllocationResult
+ * @brief Resultado da alocacao para output.
+ */
+struct AllocationResult {
+    int registerCount;
+    std::vector<RegisterAssignment> assignments;
+    bool successful;
+    std::vector<Web> webs;
+    std::vector<int> spilledWebs;
+    std::vector<std::pair<int, int>> splitPairs;
+};
+
+/**
+ * @brief Construtor de grafo a partir de webs (reutiliza regra de interferencia).
+ * @param webs Lista de webs.
+ * @return Grafo de interferencia.
+ * @complexity O(w^2 * c) onde w = webs e c = custo de intersecao.
+ */
+static InterferenceGraph buildGraphFromWebs(const std::vector<Web>& webs) {
+    InterferenceGraph graph;
+
+    for (const auto& web : webs)
+        graph.addNode(web.webId);
+
+    for (size_t i = 0; i < webs.size(); i++) {
+        for (size_t j = i + 1; j < webs.size(); j++) {
+            if (webs[i].interferesWith(webs[j]))
+                graph.addInterference(webs[i].webId, webs[j].webId);
+        }
+    }
+
+    return graph;
+}
+
+/**
+ * @brief Cria resultado de falha (tudo em memoria).
+ * @param webs Lista de webs.
+ * @return Resultado com registos 0.
+ * @complexity O(w).
+ */
+static AllocationResult makeFailedResult(const std::vector<Web>& webs) {
+    AllocationResult out;
+    out.successful = false;
+    out.registerCount = 0;
+    out.webs = webs;
+    for (const auto& web : webs)
+        out.assignments.emplace_back(web.webId, web.varName);
+    return out;
+}
+
+/**
+ * @brief Converte cores + spills em atribuicoes.
+ * @param webs Lista de webs.
+ * @param colors Mapa webId -> cor.
+ * @param spilled Webs a spill.
+ * @param successful True se aceitavel.
+ * @return Resultado pronto.
+ * @complexity O(w).
+ */
+static AllocationResult buildResult(
+    const std::vector<Web>& webs,
+    const std::map<int, int>& colors,
+    const std::set<int>& spilled,
+    const std::vector<std::pair<int, int>>& splitPairs,
+    bool successful,
+    bool includeUncoloredAsSpill
+) {
+    AllocationResult out;
+    out.successful = successful;
+    out.webs = webs;
+    out.splitPairs = splitPairs;
+
+    out.spilledWebs.reserve(spilled.size());
+    for (int id : spilled)
+        out.spilledWebs.push_back(id);
+
+    std::set<int> usedColors;
+    for (const auto& web : webs) {
+        bool isSpilled = spilled.count(web.webId) > 0;
+        if (!isSpilled && includeUncoloredAsSpill && colors.count(web.webId) == 0)
+            isSpilled = true;
+
+        if (isSpilled) {
+            out.assignments.emplace_back(web.webId, web.varName);
+            if (std::find(out.spilledWebs.begin(), out.spilledWebs.end(), web.webId) == out.spilledWebs.end())
+                out.spilledWebs.push_back(web.webId);
+            continue;
+        }
+
+        auto it = colors.find(web.webId);
+        if (it != colors.end()) {
+            out.assignments.emplace_back(web.webId, web.varName, it->second);
+            usedColors.insert(it->second);
+        } else {
+            out.assignments.emplace_back(web.webId, web.varName);
+        }
+    }
+
+    out.registerCount = static_cast<int>(usedColors.size());
+    return out;
+}
+
+/**
+ * @brief Heuristica de selecao para spill/split.
+ * @param graph Grafo atual.
+ * @param webSizes Mapa webId -> tamanho do web.
+ * @param requireSplittable Se true, ignora webs com tamanho < 2.
+ * @return WebId selecionado ou -1.
+ * @complexity O(V).
+ */
+static int chooseHighScoreWeb(
+    const InterferenceGraph& graph,
+    const std::map<int, int>& webSizes,
+    bool requireSplittable
+) {
+    int bestId = -1;
+    long long bestScore = -1;
+    int bestDeg = -1;
+
+    for (const auto& pair : graph.getNodes()) {
+        int id = pair.first;
+        int size = 1;
+        auto sit = webSizes.find(id);
+        if (sit != webSizes.end()) size = sit->second;
+        if (requireSplittable && size < 2) continue;
+
+        int deg = static_cast<int>(pair.second.interferesWith.size());
+        long long score = static_cast<long long>(deg) * size;
+
+        if (score > bestScore || (score == bestScore && deg > bestDeg)) {
+            bestScore = score;
+            bestDeg = deg;
+            bestId = id;
+        }
+    }
+
+    return bestId;
+}
+
+/**
+ * @brief Divide um web em dois por indice de linha.
+ * @param webs Lista mutavel de webs.
+ * @param targetId Id do web a dividir.
+ * @param nextId Proximo id disponivel.
+ * @return True se dividido.
+ * @complexity O(n) nas linhas do web.
+ */
+static bool splitWebByLines(
+    std::vector<Web>& webs,
+    int targetId,
+    int& nextId,
+    int& createdId
+) {
+    size_t idx = webs.size();
+    for (size_t i = 0; i < webs.size(); i++)
+        if (webs[i].webId == targetId) { idx = i; break; }
+    if (idx == webs.size()) return false;
+
+    Web& original = webs[idx];
+    if (original.lines.size() < 2) return false;
+
+    std::vector<int> orderedLines(original.lines.begin(), original.lines.end());
+    size_t splitIndex = orderedLines.size() / 2;
+    if (splitIndex == 0 || splitIndex >= orderedLines.size()) return false;
+
+    std::set<int> leftLines;
+    std::set<int> rightLines;
+
+    for (size_t i = 0; i < orderedLines.size(); i++) {
+        if (i < splitIndex) leftLines.insert(orderedLines[i]);
+        else rightLines.insert(orderedLines[i]);
+    }
+
+    createdId = nextId++;
+    Web right(createdId, original.varName);
+    right.lines = rightLines;
+    for (int line : rightLines) {
+        if (original.defLines.count(line) > 0) right.defLines.insert(line);
+        if (original.lastUseLines.count(line) > 0) right.lastUseLines.insert(line);
+    }
+
+    original.lines = leftLines;
+    std::set<int> newDef;
+    std::set<int> newLast;
+    for (int line : leftLines) {
+        if (original.defLines.count(line) > 0) newDef.insert(line);
+        if (original.lastUseLines.count(line) > 0) newLast.insert(line);
+    }
+    original.defLines = newDef;
+    original.lastUseLines = newLast;
+    original.liveRanges.clear();
+
+    webs.insert(webs.begin() + idx + 1, right);
+    return true;
+}
+
+/**
+ * @brief Executa o algoritmo de Figura 9 e aplica a regra de aceitacao do modo.
+ * @param webs Lista de webs (ordem preservada no output).
+ * @param graph Grafo de interferencia.
+ * @param cfg Configuracao do algoritmo (basic ou spilling, K).
+ * @return Resultado pronto para escrita.
+ * @complexity O(V * (V + E)) dominado pela coloracao.
+ */
+static AllocationResult allocate(
+    const std::vector<Web>& webs,
+    const InterferenceGraph& graph,
+    const AlgorithmConfig& cfg
+) {
+    if (cfg.type == AlgorithmConfig::BASIC) {
+        for (int n = 1; n <= cfg.maxRegisters; n++) {
+            std::map<int, int> colors;
+            if (GreedyColoring::colorWithoutSpill(graph, n, colors))
+                return buildResult(webs, colors, {}, {}, true, false);
+        }
+        return makeFailedResult(webs);
+    }
+
+    if (cfg.type == AlgorithmConfig::SPILLING) {
+        std::map<int, int> webSizes;
+        for (const auto& web : webs)
+            webSizes[web.webId] = web.getSize();
+
+        for (int spillsAllowed = 0; spillsAllowed <= cfg.parameter; spillsAllowed++) {
+            InterferenceGraph temp = graph;
+            std::set<int> spilled;
+
+            for (int i = 0; i < spillsAllowed; i++) {
+                int victim = chooseHighScoreWeb(temp, webSizes, false);
+                if (victim == -1) break;
+                spilled.insert(victim);
+                temp.removeNode(victim);
+            }
+
+            std::map<int, int> colors;
+            if (GreedyColoring::colorWithoutSpill(temp, cfg.maxRegisters, colors))
+                return buildResult(webs, colors, spilled, {}, true, true);
+        }
+
+        return makeFailedResult(webs);
+    }
+
+    if (cfg.type == AlgorithmConfig::SPLITTING) {
+        std::vector<Web> splitWebs = webs;
+        int nextId = 0;
+        for (const auto& web : splitWebs)
+            if (web.webId >= nextId) nextId = web.webId + 1;
+
+        std::vector<std::pair<int, int>> splitPairs;
+
+        for (int splits = 0; splits <= cfg.parameter; splits++) {
+            InterferenceGraph temp = buildGraphFromWebs(splitWebs);
+            std::map<int, int> colors;
+            if (GreedyColoring::colorWithoutSpill(temp, cfg.maxRegisters, colors))
+                return buildResult(splitWebs, colors, {}, splitPairs, true, false);
+
+            if (splits == cfg.parameter) break;
+
+            std::map<int, int> webSizes;
+            for (const auto& web : splitWebs)
+                webSizes[web.webId] = web.getSize();
+
+            int target = chooseHighScoreWeb(temp, webSizes, true);
+            if (target == -1) break;
+            int createdId = -1;
+            if (!splitWebByLines(splitWebs, target, nextId, createdId)) break;
+            splitPairs.emplace_back(target, createdId);
+        }
+
+        return makeFailedResult(splitWebs);
+    }
+
+    if (cfg.type == AlgorithmConfig::FREE) {
+        ColoringResult res = GreedyColoring::runDsatur(graph, cfg.maxRegisters);
+        return buildResult(webs, res.colors, res.spilled, {}, true, false);
+    }
+
+    return makeFailedResult(webs);
+}
 
 /**
  * @brief Mostra instrucoes de uso da aplicacao.
@@ -35,8 +319,8 @@ static void printParsedData(const InputParser& parser) {
         for (size_t i = 0; i < ranges.size(); i++) {
             std::cout << "    Range " << i << ": [" << ranges[i].startLine
                       << " - " << ranges[i].endLine << "]";
-            if (ranges[i].isDefinition) std::cout << " (def)";
-            if (ranges[i].isLastUse) std::cout << " (last_use)";
+            if (!ranges[i].defLines.empty()) std::cout << " (def)";
+            if (!ranges[i].lastUseLines.empty()) std::cout << " (last_use)";
             std::cout << " Lines: ";
             for (int line : ranges[i].lines) {
                 std::cout << line << " ";
@@ -59,6 +343,7 @@ static void printWebs(const std::vector<Web>& webs) {
                   << ", size: " << web.getSize() << ")" << std::endl;
     }
 }
+
 /**
  * @brief Imprime um resumo do grafo de interferencia.
  * @param graph Grafo de interferencia.
@@ -87,21 +372,6 @@ static void printAssignments(
 }
 
 /**
- * @brief Gera atribuicoes para memoria (fallback).
- * @param webs Lista de webs.
- * @return Lista de atribuicoes em memoria.
- * @complexity O(w) onde w = webs.
- */
-static std::vector<RegisterAssignment> buildMemoryAssignments(const std::vector<Web>& webs) {
-    std::vector<RegisterAssignment> assignments;
-    assignments.reserve(webs.size());
-    for (const auto& web : webs) {
-        assignments.emplace_back(web.webId, web.varName);
-    }
-    return assignments;
-}
-
-/**
  * @brief Escreve ficheiro de output com webs e atribuicoes.
  * @param outputFile Caminho do ficheiro de saida.
  * @param webs Lista de webs.
@@ -110,25 +380,36 @@ static std::vector<RegisterAssignment> buildMemoryAssignments(const std::vector<
  * @return True se escrito com sucesso.
  * @complexity O(w + a) onde w = webs e a = atribuicoes.
  */
-static bool writeOutputFile(
-    const std::string& outputFile,
-    const std::vector<Web>& webs,
-    int registerCount,
-    const std::vector<RegisterAssignment>& assignments
-) {
+static bool writeOutputFile(const std::string& outputFile, const AllocationResult& result) {
     std::ofstream out(outputFile);
     if (!out.is_open()) {
         std::cerr << "ERROR: Cannot write output file: " << outputFile << std::endl;
         return false;
     }
 
-    out << "webs: " << webs.size() << "\n";
-    for (const auto& web : webs) {
+    out << "webs: " << result.webs.size() << "\n";
+    for (const auto& web : result.webs) {
         out << web.toString() << "\n";
     }
 
-    out << "\nregisters: " << registerCount << "\n";
-    for (const auto& assignment : assignments) {
+    if (!result.spilledWebs.empty()) {
+        out << "\nspills: " << result.spilledWebs.size() << "\n";
+        for (size_t i = 0; i < result.spilledWebs.size(); i++) {
+            out << "spill" << i << ": web" << result.spilledWebs[i] << "\n";
+        }
+    }
+
+    if (!result.splitPairs.empty()) {
+        out << "\nsplits: " << result.splitPairs.size() << "\n";
+        for (size_t i = 0; i < result.splitPairs.size(); i++) {
+            out << "split" << i << ": web" << result.splitPairs[i].first
+                << " -> web" << result.splitPairs[i].first
+                << ", web" << result.splitPairs[i].second << "\n";
+        }
+    }
+
+    out << "\nregisters: " << result.registerCount << "\n";
+    for (const auto& assignment : result.assignments) {
         out << assignment.toString() << "\n";
     }
 
@@ -166,31 +447,14 @@ static bool runBatch(
     auto graph = parser.buildInterferenceGraph(webs);
     printGraphSummary(graph);
 
-    auto config = parser.getAlgorithmConfig();
-    int registerCount = 0;
-    std::vector<RegisterAssignment> assignments;
+    auto allocation = allocate(webs, graph, parser.getAlgorithmConfig());
+    if (!allocation.successful)
+        std::cerr << "WARNING: allocation not possible." << std::endl;
 
-    if (config.type == AlgorithmConfig::BASIC) {
-        auto result = colorGraphBasic(graph, webs, config.maxRegisters);
-        if (!result.success) {
-            std::cout << "WARNING: Graph not colorable with K registers." << std::endl;
-            assignments = buildMemoryAssignments(webs);
-            registerCount = 0;
-        } else {
-            assignments = result.assignments;
-            registerCount = result.registersUsed;
-        }
-    } else {
-        std::cout << "WARNING: Algorithm not implemented yet. Using memory." << std::endl;
-        assignments = buildMemoryAssignments(webs);
-        registerCount = 0;
-    }
-
-    if (!writeOutputFile(outputFile, webs, registerCount, assignments)) {
+    if (!writeOutputFile(outputFile, allocation))
         return false;
-    }
 
-    std::cout << "✓ Batch output written to: " << outputFile << std::endl;
+    std::cout << "Batch output written to: " << outputFile << std::endl;
     return true;
 }
 
@@ -232,13 +496,13 @@ static void interactiveMenu() {
             std::cout << "Ranges file path: ";
             std::cin >> rangesFile;
             hasRanges = parser.parseRanges(rangesFile);
-            if (hasRanges) std::cout << "✓ Ranges parsed." << std::endl;
+            if (hasRanges) std::cout << "\u2713 Ranges parsed." << std::endl;
         } else if (choice == 2) {
             std::string registersFile;
             std::cout << "Registers file path: ";
             std::cin >> registersFile;
             hasRegisters = parser.parseRegisters(registersFile);
-            if (hasRegisters) std::cout << "✓ Registers parsed." << std::endl;
+            if (hasRegisters) std::cout << "\u2713 Registers parsed." << std::endl;
         } else if (choice == 3) {
             if (!hasRanges) {
                 std::cout << "Parse ranges first." << std::endl;
@@ -270,30 +534,12 @@ static void interactiveMenu() {
             std::cout << "Output file path: ";
             std::cin >> outputFile;
 
-            auto config = parser.getAlgorithmConfig();
-            int registerCount = 0;
-            std::vector<RegisterAssignment> assignments;
             auto graph = parser.buildInterferenceGraph(webs);
-
-            if (config.type == AlgorithmConfig::BASIC) {
-                auto result = colorGraphBasic(graph, webs, config.maxRegisters);
-                if (!result.success) {
-                    std::cout << "WARNING: Graph not colorable with K registers." << std::endl;
-                    assignments = buildMemoryAssignments(webs);
-                    registerCount = 0;
-                } else {
-                    assignments = result.assignments;
-                    registerCount = result.registersUsed;
-                }
-            } else {
-                std::cout << "WARNING: Algorithm not implemented yet. Using memory." << std::endl;
-                assignments = buildMemoryAssignments(webs);
-                registerCount = 0;
-            }
-
-            if (writeOutputFile(outputFile, webs, registerCount, assignments)) {
-                std::cout << "✓ Output written to: " << outputFile << std::endl;
-            }
+            auto allocation = allocate(webs, graph, parser.getAlgorithmConfig());
+            if (!allocation.successful)
+                std::cerr << "err: allocation not possible." << std::endl;
+            if (writeOutputFile(outputFile, allocation))
+                std::cout << "Output written to: " << outputFile << std::endl;
         } else {
             std::cout << "Unknown option." << std::endl;
         }
@@ -352,17 +598,10 @@ int main(int argc, char* argv[]) {
     auto graph = parser.buildInterferenceGraph(webs);
     printGraphSummary(graph);
 
-    auto config = parser.getAlgorithmConfig();
-    if (config.type == AlgorithmConfig::BASIC) {
-        auto result = colorGraphBasic(graph, webs, config.maxRegisters);
-        if (!result.success) {
-            std::cout << "WARNING: Graph not colorable with K registers." << std::endl;
-        } else {
-            printAssignments(result.assignments, result.registersUsed);
-        }
-    } else {
-        std::cout << "WARNING: Algorithm not implemented yet. Skipping coloring." << std::endl;
-    }
+    auto allocation = allocate(webs, graph, parser.getAlgorithmConfig());
+    if (!allocation.successful)
+        std::cout << "WARNING: allocation not possible." << std::endl;
+    printAssignments(allocation.assignments, allocation.registerCount);
 
     return 0;
 }

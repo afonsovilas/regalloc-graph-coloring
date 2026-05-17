@@ -17,3 +17,6 @@ WARN_IF_UNDOCUMENTED   = YES
 WARN_NO_PARAMDOC       = YES
 OPTIMIZE_OUTPUT_FOR_C  = NO
 MARKDOWN_SUPPORT       = YES
+
+# Atalho personalizado para documentar a complexidade sem dar erro
+ALIASES               += "complexity=\par Complexidade Temporal:^^"

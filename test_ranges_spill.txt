@@ -1,0 +1,6 @@
+# Example designed to force spills with 1 register
+# Three variables fully overlap across the same lines
+
+a: 1+,2,3,4-
+b: 1+,2,3,4-
+c: 1+,2,3,4-
