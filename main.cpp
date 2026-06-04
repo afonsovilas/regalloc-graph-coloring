@@ -31,12 +31,15 @@ struct AllocationResult {
  * @return Grafo de interferencia.
  * @complexity O(w^2 * c) onde w = webs e c = custo de intersecao.
  */
+// Build a fresh interference graph based solely on the current web list.
 static InterferenceGraph buildGraphFromWebs(const std::vector<Web>& webs) {
     InterferenceGraph graph;
 
+    // Add one node per web id.
     for (const auto& web : webs)
         graph.addNode(web.webId);
 
+    // Check pairwise interference and add edges.
     for (size_t i = 0; i < webs.size(); i++) {
         for (size_t j = i + 1; j < webs.size(); j++) {
             if (webs[i].interferesWith(webs[j]))
@@ -53,11 +56,13 @@ static InterferenceGraph buildGraphFromWebs(const std::vector<Web>& webs) {
  * @return Resultado com registos 0.
  * @complexity O(w).
  */
+// Build a failed result keeping only web identity information.
 static AllocationResult makeFailedResult(const std::vector<Web>& webs) {
     AllocationResult out;
     out.successful = false;
     out.registerCount = 0;
     out.webs = webs;
+    // Keep assignments uncolored for failed results.
     for (const auto& web : webs)
         out.assignments.emplace_back(web.webId, web.varName);
     return out;
@@ -72,6 +77,7 @@ static AllocationResult makeFailedResult(const std::vector<Web>& webs) {
  * @return Resultado pronto.
  * @complexity O(w).
  */
+// Convert a coloring + spill set into final output assignments.
 static AllocationResult buildResult(
     const std::vector<Web>& webs,
     const std::map<int, int>& colors,
@@ -89,6 +95,7 @@ static AllocationResult buildResult(
     for (int id : spilled)
         out.spilledWebs.push_back(id);
 
+    // Walk webs in original order to preserve output ordering.
     std::set<int> usedColors;
     for (const auto& web : webs) {
         bool isSpilled = spilled.count(web.webId) > 0;
@@ -102,6 +109,7 @@ static AllocationResult buildResult(
             continue;
         }
 
+        // Colored webs map to concrete registers; uncolored remain empty.
         auto it = colors.find(web.webId);
         if (it != colors.end()) {
             out.assignments.emplace_back(web.webId, web.varName, it->second);
@@ -123,6 +131,7 @@ static AllocationResult buildResult(
  * @return WebId selecionado ou -1.
  * @complexity O(V).
  */
+// Heuristic for choosing a web to spill or split.
 static int chooseHighScoreWeb(
     const InterferenceGraph& graph,
     const std::map<int, int>& webSizes,
@@ -160,12 +169,14 @@ static int chooseHighScoreWeb(
  * @return True se dividido.
  * @complexity O(n) nas linhas do web.
  */
+// Split a web into two by cutting its ordered line list in half.
 static bool splitWebByLines(
     std::vector<Web>& webs,
     int targetId,
     int& nextId,
     int& createdId
 ) {
+    // Locate target web in the vector.
     size_t idx = webs.size();
     for (size_t i = 0; i < webs.size(); i++)
         if (webs[i].webId == targetId) { idx = i; break; }
@@ -186,6 +197,7 @@ static bool splitWebByLines(
         else rightLines.insert(orderedLines[i]);
     }
 
+    // Build the right-hand web with a fresh id.
     createdId = nextId++;
     Web right(createdId, original.varName);
     right.lines = rightLines;
@@ -194,6 +206,7 @@ static bool splitWebByLines(
         if (original.lastUseLines.count(line) > 0) right.lastUseLines.insert(line);
     }
 
+    // Shrink the original web to the left-hand lines.
     original.lines = leftLines;
     std::set<int> newDef;
     std::set<int> newLast;
@@ -203,6 +216,7 @@ static bool splitWebByLines(
     }
     original.defLines = newDef;
     original.lastUseLines = newLast;
+    // Force live ranges to be recomputed by the caller if needed.
     original.liveRanges.clear();
 
     webs.insert(webs.begin() + idx + 1, right);
@@ -217,12 +231,14 @@ static bool splitWebByLines(
  * @return Resultado pronto para escrita.
  * @complexity O(V * (V + E)) dominado pela coloracao.
  */
+// Dispatch allocation based on the algorithm configuration.
 static AllocationResult allocate(
     const std::vector<Web>& webs,
     const InterferenceGraph& graph,
     const AlgorithmConfig& cfg
 ) {
     if (cfg.type == AlgorithmConfig::BASIC) {
+        // Try the smallest register count first; accept on first success.
         for (int n = 1; n <= cfg.maxRegisters; n++) {
             std::map<int, int> colors;
             if (GreedyColoring::colorWithoutSpill(graph, n, colors))
@@ -232,6 +248,7 @@ static AllocationResult allocate(
     }
 
     if (cfg.type == AlgorithmConfig::SPILLING) {
+        // Precompute web sizes for the spill heuristic.
         std::map<int, int> webSizes;
         for (const auto& web : webs)
             webSizes[web.webId] = web.getSize();
@@ -240,6 +257,7 @@ static AllocationResult allocate(
             InterferenceGraph temp = graph;
             std::set<int> spilled;
 
+            // Spill the highest-score webs first, up to the current limit.
             for (int i = 0; i < spillsAllowed; i++) {
                 int victim = chooseHighScoreWeb(temp, webSizes, false);
                 if (victim == -1) break;
@@ -271,6 +289,7 @@ static AllocationResult allocate(
 
             if (splits == cfg.parameter) break;
 
+            // If coloring failed, split the highest-score splittable web.
             std::map<int, int> webSizes;
             for (const auto& web : splitWebs)
                 webSizes[web.webId] = web.getSize();
@@ -286,6 +305,7 @@ static AllocationResult allocate(
     }
 
     if (cfg.type == AlgorithmConfig::FREE) {
+        // DSATUR-based heuristic with optional spill set.
         ColoringResult res = GreedyColoring::runDsatur(graph, cfg.maxRegisters);
         return buildResult(webs, res.colors, res.spilled, {}, true, false);
     }
@@ -298,6 +318,7 @@ static AllocationResult allocate(
  * @param exeName Nome do executavel.
  * @complexity O(1).
  */
+// Print CLI usage instructions.
 static void printUsage(const std::string& exeName) {
     std::cout << "Usage: " << exeName << " ranges.txt registers.txt" << std::endl;
     std::cout << "   or: " << exeName << " -b ranges.txt registers.txt output.txt" << std::endl;
@@ -309,6 +330,7 @@ static void printUsage(const std::string& exeName) {
  * @param parser Parser com dados carregados.
  * @complexity O(v + r) onde v = variaveis, r = total de ranges.
  */
+// Dump parsed ranges and algorithm config.
 static void printParsedData(const InputParser& parser) {
     std::cout << "\n=== PARSED DATA ===" << std::endl;
     std::cout << "Algorithm: " << parser.getAlgorithmConfig().toString() << std::endl;
@@ -335,6 +357,7 @@ static void printParsedData(const InputParser& parser) {
  * @param webs Lista de webs.
  * @complexity O(w + l) onde w = webs, l = linhas totais.
  */
+// Print the list of generated webs.
 static void printWebs(const std::vector<Web>& webs) {
     std::cout << "\nWebs:" << std::endl;
     std::cout << "Total: " << webs.size() << std::endl;
@@ -349,6 +372,7 @@ static void printWebs(const std::vector<Web>& webs) {
  * @param graph Grafo de interferencia.
  * @complexity O(1) para contagens pre-calculadas.
  */
+// Print a small summary of the interference graph.
 static void printGraphSummary(const InterferenceGraph& graph) {
     std::cout << "\nInterference Graph:" << std::endl;
     std::cout << "Nodes: " << graph.getNumNodes() << std::endl;
@@ -361,6 +385,7 @@ static void printGraphSummary(const InterferenceGraph& graph) {
  * @param registerCount Numero de registos usados.
  * @complexity O(a) onde a = numero de atribuicoes.
  */
+// Print final register assignments.
 static void printAssignments(
     const std::vector<RegisterAssignment>& assignments,
     int registerCount
@@ -380,6 +405,7 @@ static void printAssignments(
  * @return True se escrito com sucesso.
  * @complexity O(w + a) onde w = webs e a = atribuicoes.
  */
+// Write the output file in the project-required format.
 static bool writeOutputFile(const std::string& outputFile, const AllocationResult& result) {
     std::ofstream out(outputFile);
     if (!out.is_open()) {
@@ -392,6 +418,7 @@ static bool writeOutputFile(const std::string& outputFile, const AllocationResul
         out << web.toString() << "\n";
     }
 
+    // Emit spilled webs section if present.
     if (!result.spilledWebs.empty()) {
         out << "\nspills: " << result.spilledWebs.size() << "\n";
         for (size_t i = 0; i < result.spilledWebs.size(); i++) {
@@ -399,6 +426,7 @@ static bool writeOutputFile(const std::string& outputFile, const AllocationResul
         }
     }
 
+    // Emit split mapping section if present.
     if (!result.splitPairs.empty()) {
         out << "\nsplits: " << result.splitPairs.size() << "\n";
         for (size_t i = 0; i < result.splitPairs.size(); i++) {
@@ -424,6 +452,7 @@ static bool writeOutputFile(const std::string& outputFile, const AllocationResul
  * @return True se tudo correr bem.
  * @complexity Dominado pelo parsing e build de webs.
  */
+// Execute batch mode: parse, build, allocate, and write output file.
 static bool runBatch(
     const std::string& rangesFile,
     const std::string& registersFile,
@@ -462,6 +491,7 @@ static bool runBatch(
  * @brief Menu interativo para testar parsing e output.
  * @complexity Dependente das operacoes escolhidas pelo utilizador.
  */
+// Interactive menu for manual testing and inspection.
 static void interactiveMenu() {
     InputParser parser;
     bool hasRanges = false;
@@ -554,11 +584,13 @@ static void interactiveMenu() {
  * @complexity O(1) fora chamadas auxiliares.
  */
 int main(int argc, char* argv[]) {
+    // No args -> open interactive menu.
     if (argc == 1) {
         interactiveMenu();
         return 0;
     }
 
+    // Batch mode: explicit output file.
     if (argc >= 2 && std::string(argv[1]) == "-b") {
         if (argc < 5) {
             printUsage(argv[0]);
@@ -570,6 +602,7 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
+    // Single run with parsing and console output.
     if (argc < 3) {
         printUsage(argv[0]);
         return 1;
