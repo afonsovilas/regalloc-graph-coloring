@@ -1,85 +1,74 @@
-# DA_secondProject
-
-## Overview
-Register allocation tool using interference graphs and graph coloring. Supports basic, spilling,
-splitting, and free (DSATUR-based) variants. Input uses live ranges with +/- markers and produces
-web/register assignments as specified in the project description.
-
+# Register Allocator (Graph Coloring)
+ 
+Register allocation tool in C++ based on interference graphs and graph coloring. It supports four variants: basic allocation, spilling, splitting, and a free DSATUR-based heuristic. The input describes variable live ranges with `+`/`-` markers, and the output assigns each web to a register.
+ 
+Developed as the second project for the **Algorithm Design (Desenho de Algoritmos)** course of the Bachelor in Informatics and Computing Engineering at the Faculty of Engineering of the University of Porto (FEUP), 2025/2026.
+ 
+**Team:** [Name 1], [Name 2], [Name 3], Afonso Vilas
+ 
 ## Build
+ 
 ```bash
 make
 ```
-
+ 
 ## Run
+ 
 Interactive menu:
+ 
 ```bash
 ./main
 ```
-
+ 
 Batch mode:
+ 
 ```bash
 ./main -b ranges.txt registers.txt allocation.txt
 ```
-
-## Doxygen (T1.3)
-The Doxyfile is already configured. Generate HTML docs with:
+ 
+## Documentation
+ 
+The project is documented with Doxygen. To generate the HTML documentation:
+ 
 ```bash
 doxygen Doxyfile
 ```
-Output goes to Documentation/html/index.html.
-
+ 
+The output is written to `Documentation/html/index.html`.
+ 
 ## Algorithms
-
-### T2.1 Basic Register Allocation
-- Uses greedy simplification + coloring without spills.
-- Searches for the minimum number of registers N such that N <= registers from input.
-
-### T2.2 Spilling (heuristic and rationale)
-- If coloring fails with the provided register limit, the graph is simplified by spilling webs.
-- Spill selection heuristic: pick the web with the highest score
-	(score = degree * web_size). This prioritizes high-interference and long webs,
-	which tends to reduce congestion quickly.
-- We try 0..K spills (K from input), stopping at the first feasible coloring.
-
-### T2.3 Splitting (heuristic and rationale)
-- If coloring fails, we split up to K webs to reduce interference.
-- Split selection heuristic: same score as spilling (degree * web_size), but only
-	webs with size >= 2 are considered.
-- Split strategy: split the web by its ordered line list (median cut), creating two
-	derived webs. The interference graph is rebuilt after each split.
-- This corresponds to inserting save/restore at the split boundary (conceptual),
-	as required by the project description.
-
-### T2.4 Free Algorithm
-- DSATUR-based heuristic with spills for uncolorable nodes.
-
-## Engineering Decisions & Trade-offs 
-
-### Graph Representation Selection
-- We deliberately chose to implement our interference graph using a std::map<int, InterferenceNode> instead of a traditional 2D adjacency matrix.
-
-### Architectural Rationale
-- While a 2D matrix provides O(1) edge lookups, real-world compiler interference graphs are highly esparse. Utilizing a map structure dramatically optimizes our RAM overhead by only tracking actual collisions. This trade-off introduces a manageable O(log V) lookup overhead inside the structural map while ensuring scalable memory consumption when compiling massive data sets.
-
-## Quality Assurance & Automated Validation 
-
-### Automated Batch Testing
-- To evaluate our software against production-grade workloads, we built a native batch mode execution accessible via the ./main -b argument. This allows our register allocator to seamlessly interface with external automated test benches, processing hundreds of distinct constraint files (ranges.txt) in a few seconds.
-
-### Code Hygiene and Rigor
-- Our documentation pipeline is integrated with Doxygen via parameterized custom ALIASES designed to map out clean temporal complexity blocks. The entire source codebase compiles cleanly with zero terminal warnings, ensuring strict design quality.
-
-## Future Work & Architectural Limitations  
-
-### Register Coalescing
-- A highly valuable next evolutionary step would be implementing a coalescing phase to catch direct copy assignments (e.g., a = b). If their respective webs do not interfere, they can be fused into the same color, completely removing redundant move instructions from the final compiled binary.
-
-### Dynamic Spill Cost Allocation
-- Currently, our spill score selection relies on a static web size and current degree calculation. In a production compiler, instruction lines located inside deeply nested loops or blocks should be weighted exponentially higher, as memory operations within those execution points incur severe runtime performance penalties.
-
+ 
+### Basic register allocation
+- Greedy simplification followed by coloring, without spills.
+- Finds the minimum number of registers N needed, as long as N does not exceed the number of registers given in the input.
+### Spilling
+- If the graph cannot be colored with the available registers, webs are spilled to simplify it.
+- **Heuristic:** spill the web with the highest score, where `score = degree × web size`. This favours long webs with many conflicts, which usually reduces interference fastest.
+- The tool tries 0 to K spills (K given in the input) and stops at the first valid coloring.
+### Splitting
+- If coloring fails, up to K webs are split to reduce interference.
+- **Heuristic:** the same score as spilling (`degree × web size`), considering only webs with at least two lines.
+- **Strategy:** each selected web is split at the median of its ordered line list, creating two new webs. The interference graph is rebuilt after each split.
+- Conceptually, this corresponds to inserting save/restore instructions at the split point.
+### Free algorithm
+- DSATUR-based coloring heuristic, spilling the nodes that cannot be colored.
+## Design decisions
+ 
+### Graph representation
+The interference graph is stored as a `std::map<int, InterferenceNode>` rather than a 2D adjacency matrix. Interference graphs are usually sparse, so storing only the existing edges uses much less memory. The trade-off is an O(log V) lookup instead of the O(1) access of a matrix.
+ 
+### Batch mode
+The `-b` option runs the allocator directly on input files, without the interactive menu. This makes it easy to test the tool automatically on many input files.
+ 
+### Code quality
+The code is documented with Doxygen, including the time complexity of the main functions, and compiles without warnings.
+ 
+## Limitations and future work
+ 
+- **Register coalescing:** a coalescing phase could merge webs connected by copy instructions (e.g. `a = b`) when they do not interfere, assigning them the same register and removing unnecessary move instructions.
+- **Spill cost:** the current spill score uses only web size and degree. A more realistic cost model would give higher weight to lines inside loops, where memory accesses are more expensive.
 ## Notes
-- Interference uses the boundary rule: a web that starts at a definition does not
-	interfere with a web that ends at a last-use on the same line.
-- Output includes +/- markers for definition and last-use program points.
-- For spilling/splitting, the output also includes processing-friendly sections:
-  `spills: N` and `splits: N`, listing the web ids involved.
+ 
+- Interference follows the boundary rule: a web that starts at a definition does not interfere with a web that ends at a last use on the same line.
+- The output includes `+`/`-` markers for definition and last-use points.
+- For spilling and splitting, the output also includes `spills: N` and `splits: N` sections listing the affected web ids.
