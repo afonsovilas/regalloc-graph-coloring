@@ -4,7 +4,7 @@ Register allocation tool in C++ based on interference graphs and graph coloring.
  
 Developed as the second project for the **Algorithm Design (Desenho de Algoritmos)** course of the Bachelor in Informatics and Computing Engineering at the Faculty of Engineering of the University of Porto (FEUP), 2025/2026.
  
-**Team:** [Name 1], [Name 2], [Name 3], Afonso Vilas
+**Team:** Guilherme Pinho, Afonso Vilas
  
 ## Build
  
